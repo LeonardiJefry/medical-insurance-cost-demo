@@ -59,12 +59,13 @@ def render_field(name, spec):
     label, help_text = FIELD_TEXT[name]
     if spec["kind"] == "category":
         choices = list(spec["choices"])
-        return st.selectbox(
+        return st.radio(
             label,
             options=choices,
             index=choices.index(spec["default"]),
             format_func=lambda choice: CATEGORY_LABELS.get(choice, choice),
             help=help_text,
+            horizontal=True,
             key=name,
         )
 
