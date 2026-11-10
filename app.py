@@ -33,20 +33,6 @@ FIELD_TEXT = {
     "medication_count": ("Jumlah obat", "Jumlah obat yang tercatat sebelum periode perkiraan."),
     "region": ("Wilayah tempat tinggal", "Wilayah geografis sesuai kategori pada dataset."),
     "urban_rural": ("Tipe kawasan tempat tinggal", "Pilih kategori lingkungan tempat tinggal."),
-    "monthly_premium": (
-        "Premi bulanan polis",
-        "Gunakan premi polis yang sudah diketahui sebelum periode estimasi, "
-        "dalam satuan biaya yang sama dengan dataset.",
-    ),
-    "deductible": (
-        "Deductible pada polis",
-        "Nilai biaya yang menjadi tanggungan pemegang polis sesuai ketentuan deductible. "
-        "Gunakan satuan biaya yang sama dengan dataset.",
-    ),
-    "network_tier": (
-        "Tingkat jaringan polis",
-        "Pilih tingkat Bronze, Silver, Gold, atau Platinum yang tercatat pada polis sebelum periode estimasi.",
-    ),
 }
 CATEGORY_LABELS = {
     "Never": "Tidak pernah merokok",
@@ -69,8 +55,6 @@ NUMERIC_DOMAINS = {
     "hospitalizations_last_3yrs": (0, 1096),
     "days_hospitalized_last_3yrs": (0, 1096),
     "medication_count": (0, None),
-    "monthly_premium": (0.0, None),
-    "deductible": (0, None),
 }
 
 
@@ -114,12 +98,9 @@ def render_field(name, spec):
 
 
 def main():
-    st.set_page_config(page_title="Estimasi Biaya Medis Berbasis Polis", page_icon="📊")
-    st.title("Estimasi biaya medis berbasis polis")
-    st.write(
-        "Gunakan profil orang dewasa dan data polis yang diasumsikan sudah diketahui "
-        "sebelum periode estimasi."
-    )
+    st.set_page_config(page_title="Estimasi Biaya Medis Tahunan", page_icon="📊")
+    st.title("Estimasi biaya medis tahunan")
+    st.write("Simulasikan biaya medis tahunan dari profil dan riwayat orang dewasa (usia 18 tahun ke atas).")
     st.caption("Gunakan profil contoh untuk demo akademik. Asal klinis dataset belum terverifikasi.")
 
     try:
@@ -138,16 +119,19 @@ def main():
     metrics = bundle["metrics"]
     r2_met = metrics["r2"] > 0.70
     mape_met = metrics["mape_pct"] < 15
+    r2_status = "Tercapai" if r2_met else "Belum tercapai"
+    mape_status = "Tercapai" if mape_met else "Belum tercapai"
     metrics_pass = r2_met and mape_met
     rubric_pass = bool(bundle.get("rubric_pass", metrics_pass)) and metrics_pass
     if rubric_pass:
-        st.success("Ambang evaluasi tercapai pada benchmark dataset ini.")
+        st.success("Ambang evaluasi proyek tercapai pada data uji.")
     else:
-        st.info("Kelulusan ambang proyek belum dikonfirmasi untuk model ini. Gunakan estimasi untuk simulasi.")
+        st.info(
+            f"Ambang R² > 0,70 {r2_status.lower()}. "
+            f"Ambang MAPE < 15% {mape_status.lower()}. Gunakan estimasi untuk simulasi."
+        )
 
     fields = bundle["fields"]
-    if "monthly_premium" in fields:
-        st.caption("Hubungan matematis antara premi dan biaya pada dataset dibahas pada bagian evaluasi.")
     st.subheader("Profil untuk simulasi")
     st.write(
         f"Isi {len(fields)} kolom yang digunakan model terpilih. "
@@ -190,7 +174,7 @@ def main():
             prediction = float(bundle["model"].predict(row)[0])
             if math.isfinite(prediction) and prediction >= 0:
                 st.metric("Estimasi biaya medis tahunan", format_number(prediction))
-                st.caption("Angka memakai satuan biaya pada dataset. Evaluasi berlaku untuk benchmark dataset ini.")
+                st.caption("Angka memakai satuan biaya pada dataset dan digunakan untuk simulasi.")
             else:
                 st.error("Model tidak menghasilkan estimasi biaya yang valid untuk profil ini.")
 
@@ -200,24 +184,14 @@ def main():
             st.caption(f"Versi model {bundle['model_id']}")
         if "evaluation_role" in bundle:
             st.caption(f"Peran data evaluasi {bundle['evaluation_role']}")
-        if len(fields) == 10:
-            st.write(
-                "Sepuluh masukan dipertahankan sesuai rancangan proyek. "
-                "Analisis lima fitur penting membantu menjelaskan prediksi model."
-            )
-            st.write(
-                "Peringkat tetap menampilkan lima fitur meskipun kekuatan prediksi dapat "
-                "terkonsentrasi pada premi, deductible, dan tingkat jaringan polis."
-            )
         st.write(
-            "Skor berikut berasal dari benchmark pada dataset yang sama. "
-            "Data polis diasumsikan sudah tersedia sebelum periode estimasi."
+            "Notebook membandingkan model dengan sepuluh masukan profil dan riwayat, "
+            "lalu menguji versi ringkas dengan lima masukan terpenting pada data validasi. "
+            "Formulir mengikuti masukan model terpilih."
         )
-        r2_status = "Tercapai" if r2_met else "Belum tercapai"
-        mape_status = "Tercapai" if mape_met else "Belum tercapai"
         st.table(
             {
-                "Metrik benchmark data uji": ["R²", "MAE", "MAPE", "WAPE"],
+                "Metrik data uji": ["R²", "MAE", "MAPE", "WAPE"],
                 "Nilai": [
                     format_number(metrics["r2"], 6),
                     f"{format_number(metrics['mae'])} satuan biaya",
@@ -237,21 +211,6 @@ def main():
             "MAPE merata-ratakan persentase selisih absolut per profil. WAPE membandingkan total selisih "
             "absolut dengan total biaya aktual. Ketepatan untuk tiap profil dapat berbeda."
         )
-        if "monthly_premium" in fields:
-            st.write(
-                "Audit notebook menemukan bahwa premi tahunan pada dataset mengikuti persamaan "
-                "berikut hingga galat pembulatan. Premi bulanan mendekati premi tahunan dibagi 12."
-            )
-            st.code(
-                "annual_premium = 200 + 0.01 × deductible + tier_factor × annual_medical_cost\n"
-                "tier_factor = Bronze 0.096 | Silver 0.120 | Gold 0.144 | Platinum 0.174",
-                language=None,
-            )
-            st.write(
-                "Hubungan ini membuat biaya dan premi saling terkait secara matematis pada dataset. "
-                "Skor benchmark dipengaruhi struktur tersebut. Kemampuan memperkirakan biaya "
-                "periode mendatang perlu diuji dengan data polis dan biaya dari periode terpisah."
-            )
         st.markdown(f"[Dataset Medical Insurance Cost Prediction di Kaggle]({DATASET_URL})")
 
 
